@@ -1,0 +1,403 @@
+openapi: 3.0.3
+info:
+  title: iBuildz API
+  version: 1.0.0
+  description: |
+    REST API for the iBuildz platform. All endpoints are prefixed with /api/v1/.
+    JWT authentication is required for protected endpoints.
+servers:
+  - url: http://localhost:4000/api/v1
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        fullName: { type: string }
+        email: { type: string, format: email }
+        profilePictureUrl: { type: string, nullable: true }
+        primaryRole: { type: string }
+        phoneNumber: { type: string, nullable: true }
+        profile:
+          type: object
+          properties:
+            skills: { type: object, additionalProperties: { type: array, items: { type: string } }, nullable: true }
+            experienceYears: { type: integer, nullable: true }
+            licenseNumber: { type: string, nullable: true }
+            isVerified: { type: boolean }
+            bio: { type: string, nullable: true }
+    Project:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        clientId: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        location: { type: object, properties: { lat: { type: number }, lon: { type: number } }, nullable: true }
+        address: { type: string, nullable: true }
+        status: { type: string, enum: [planning, active, completed, on_hold, cancelled] }
+        startDate: { type: string, format: date, nullable: true }
+        estimatedEndDate: { type: string, format: date, nullable: true }
+        actualEndDate: { type: string, format: date, nullable: true }
+        estimatedBudget: { type: number, nullable: true }
+        actualCost: { type: number, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        _links:
+          type: object
+          properties:
+            self: { type: string }
+            members: { type: string }
+            documents: { type: string }
+    ProgressUpdate:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        updateText: { type: string }
+        photoUrl: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    Document:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        uploaderId: { type: string, format: uuid }
+        documentName: { type: string }
+        s3Key: { type: string }
+        fileType: { type: string, enum: [permit, design_plan, contract, invoice, other] }
+        status: { type: string, enum: [submitted, approved, rejected, pending] }
+        createdAt: { type: string, format: date-time }
+    Rating:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        raterId: { type: string, format: uuid }
+        rateeId: { type: string, format: uuid }
+        ratingValue: { type: integer }
+        comment: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message: { type: string }
+security:
+  - bearerAuth: []
+paths:
+  /auth/register:
+    post:
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fullName: { type: string }
+                email: { type: string, format: email }
+                password: { type: string }
+                primaryRole: { type: string }
+      responses:
+        '201':
+          description: User registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  token:
+                    type: string
+        '400': { description: Bad request, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: Email exists, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /auth/login:
+    post:
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  token:
+                    type: string
+        '401': { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /users/me:
+    get:
+      summary: Get current user profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Success, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '401': { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    put:
+      summary: Update current user profile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fullName: { type: string }
+                phoneNumber: { type: string }
+                profile:
+                  type: object
+                  properties:
+                    bio: { type: string }
+      responses:
+        '200': { description: Success, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '400': { description: Bad request, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /workers:
+    get:
+      summary: Find workers by skill/location
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: skill
+          schema: { type: string }
+        - in: query
+          name: location
+          schema: { type: string }
+      responses:
+        '200':
+          description: List of workers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+        '400': { description: Bad request, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /projects:
+    post:
+      summary: Create a new project
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                description: { type: string }
+                location:
+                  type: object
+                  properties:
+                    lat: { type: number }
+                    lon: { type: number }
+                address: { type: string }
+                estimatedBudget: { type: number }
+      responses:
+        '201': { description: Project created, content: { application/json: { schema: { type: object, properties: { project: { $ref: '#/components/schemas/Project' } } } } } }
+        '400': { description: Bad request, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: Forbidden, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /projects/{id}:
+    get:
+      summary: Get project details
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Success, content: { application/json: { schema: { type: object, properties: { project: { $ref: '#/components/schemas/Project' }, _links: { type: object } } } } } }
+        '401': { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: Forbidden, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: Not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /projects/{id}/members:
+    post:
+      summary: Add member to project
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId: { type: string }
+                roleInProject: { type: string }
+      responses:
+        '201': { description: Member added, content: { application/json: { schema: { type: object, properties: { member: { type: object } } } } } }
+        '401': { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: Forbidden, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: Not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '409': { description: Conflict, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /projects/{id}/progress:
+    post:
+      summary: Add progress update
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                updateText: { type: string }
+                photoUrl: { type: string }
+      responses:
+        '201': { description: Update created, content: { application/json: { schema: { type: object, properties: { update: { $ref: '#/components/schemas/ProgressUpdate' } } } } } }
+        '400': { description: Bad request, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: Forbidden, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /uploads/request-url:
+    post:
+      summary: Get S3 pre-signed upload URL
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fileName: { type: string }
+                fileType: { type: string }
+      responses:
+        '200': { description: Success, content: { application/json: { schema: { type: object, properties: { uploadUrl: { type: string }, key: { type: string } } } } } }
+        '400': { description: Bad request, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /projects/{id}/documents:
+    post:
+      summary: Add document record
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                documentName: { type: string }
+                s3Key: { type: string }
+                fileType: { type: string, enum: [permit, design_plan, contract, invoice, other] }
+      responses:
+        '201': { description: Document created, content: { application/json: { schema: { type: object, properties: { document: { $ref: '#/components/schemas/Document' } } } } } }
+        '400': { description: Bad request, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: Forbidden, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /admin/users/{id}/verify:
+    post:
+      summary: Verify user (admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                isVerified: { type: boolean }
+      responses:
+        '200': { description: Success, content: { application/json: { schema: { type: object, properties: { message: { type: string } } } } } }
+        '401': { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: Forbidden, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: Not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /estimate:
+    post:
+      summary: Get cost estimate
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                area: { type: number }
+                areaUnit: { type: string }
+                location: { type: string }
+                quality: { type: string }
+                floors: { type: integer }
+      responses:
+        '200': { description: Estimate, content: { application/json: { schema: { type: object, properties: { totalCost: { type: number }, breakdown: { type: object } } } } } }
+        '400': { description: Bad request, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /sync:
+    post:
+      summary: Offline data sync
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                changes:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      action: { type: string, enum: [create, update, delete] }
+                      entity: { type: string }
+                      data: { type: object }
+                      timestamp: { type: string, format: date-time }
+      responses:
+        '200': { description: Sync result, content: { application/json: { schema: { type: object, properties: { result: { type: string }, authoritativeState: { type: object } } } } } }
+        '400': { description: Bad request, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }

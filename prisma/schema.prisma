@@ -1,0 +1,157 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+
+enum ProjectStatus {
+  planning
+  active
+  completed
+  on_hold
+  cancelled
+}
+
+enum DocumentType {
+  permit
+  design_plan
+  contract
+  invoice
+  other
+}
+
+enum DocumentStatus {
+  submitted
+  approved
+  rejected
+  pending
+}
+
+// Models
+model User {
+  id                String      @id @default(uuid())
+  email             String      @unique
+  passwordHash      String
+  fullName          String
+  phoneNumber       String?     @unique
+  profilePictureUrl String?
+  primaryRole       String
+  location          Json?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  roles             UserRole[]
+  profile           Profile?
+  projects          Project[]   @relation("ClientProjects")
+  projectMembers    ProjectMember[]
+  progressUpdates   ProgressUpdate[]
+  uploadedDocuments Document[]  @relation("UploadedDocuments")
+  ratingsGiven      Rating[]    @relation("RatingsGiven")
+  ratingsReceived   Rating[]    @relation("RatingsReceived")
+}
+
+model Role {
+  id       Int        @id @default(autoincrement())
+  roleName String     @unique
+  users    UserRole[]
+}
+
+model UserRole {
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  roleId Int
+  @@id([userId, roleId])
+}
+
+model Profile {
+  id              String   @id @default(uuid())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String   @unique
+  skills          Json?
+  experienceYears Int?
+  licenseNumber   String?
+  isVerified      Boolean  @default(false)
+  bio             String?
+}
+
+model Project {
+  id              String           @id @default(uuid())
+  client          User             @relation("ClientProjects", fields: [clientId], references: [id], onDelete: Restrict)
+  clientId        String
+  title           String
+  description     String?
+  location        Json?
+  address         String?
+  status          ProjectStatus    @default(planning)
+  startDate       DateTime?
+  estimatedEndDate DateTime?
+  actualEndDate   DateTime?
+  estimatedBudget Decimal?         @db.Decimal(15,2)
+  actualCost      Decimal?         @db.Decimal(15,2)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  members         ProjectMember[]
+  progressUpdates ProgressUpdate[]
+  documents       Document[]
+  ratings         Rating[]
+}
+
+model ProjectMember {
+  project         Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId       String
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String
+  roleInProject   String
+  isActive        Boolean @default(true)
+  joinedAt        DateTime @default(now())
+  @@id([projectId, userId])
+}
+
+model ProgressUpdate {
+  id         String   @id @default(uuid())
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId  String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  userId     String
+  updateText String
+  photoUrl   String?
+  createdAt  DateTime @default(now())
+}
+
+model Document {
+  id           String         @id @default(uuid())
+  project      Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId    String
+  uploader     User           @relation("UploadedDocuments", fields: [uploaderId], references: [id], onDelete: Restrict)
+  uploaderId   String
+  documentName String
+  s3Key        String
+  fileType     DocumentType
+  status       DocumentStatus @default(pending)
+  createdAt    DateTime       @default(now())
+}
+
+model Rating {
+  id         String   @id @default(uuid())
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId  String
+  rater      User     @relation("RatingsGiven", fields: [raterId], references: [id], onDelete: Cascade)
+  raterId    String
+  ratee      User     @relation("RatingsReceived", fields: [rateeId], references: [id], onDelete: Cascade)
+  rateeId    String
+  ratingValue Int
+  comment    String?
+  createdAt  DateTime @default(now())
+  @@unique([projectId, raterId, rateeId])
+}
